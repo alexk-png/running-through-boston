@@ -18,6 +18,13 @@ let watchSeconds = 0;
 let SCENE_H = 600;
 let shoesImg;
 
+// ── Particle intro ────────────────────────────────────────────────────
+let particles      = [];   // flat array, sorted by letter so fill() batches
+let particlesReady = false;
+let introPhase     = 'assembling'; // 'assembling' | 'settled' | 'scattering'
+let taglineAlpha   = 0;
+let settledFrames  = 0;
+
 // scene order:
 // 0 = apartment / hokas
 // 1 = watch
@@ -45,6 +52,9 @@ function setup() {
   cnv.style.left = '0';
 
   window.addEventListener('scroll', () => { scrollY = window.scrollY; });
+
+  // Wait for Google Fonts to be ready before sampling letter pixels
+  document.fonts.ready.then(setupParticles);
 }
 
 function draw() {
@@ -69,8 +79,7 @@ function draw() {
   if (s2a > 0) drawCharlesRiver(s2a, s2p);
   if (s3a > 0) drawFenway(s3a, s3p);
 
-  let introAlpha = constrain(map(scrollY, 0, windowHeight * 0.4, 255, 0), 0, 255);
-  if (introAlpha > 0) drawIntro(introAlpha);
+  drawParticleIntro();
 
   dotOffset += 1.5;
   if (dotOffset > 24) dotOffset = 0;
@@ -549,32 +558,192 @@ function drawSock(cx, cy, size, alpha) {
 // ============================================================
 // INTRO
 // ============================================================
-function drawIntro(introAlpha) {
-  let widths = [], totalW = 0, gap = 12;
+// ============================================================
+// PARTICLE INTRO — setup
+// Renders each letter into an off-screen buffer, samples pixels,
+// and creates one particle per sampled point.
+// ============================================================
+function setupParticles() {
+  particles      = [];
+  introPhase     = 'assembling';
+  taglineAlpha   = 0;
+  settledFrames  = 0;
+  particlesReady = false;
+
+  let gap = 12;
+
+  // ── Measure letter widths ──────────────────────────────────────────
+  let widths = [], totalW = 0;
+  let measure = createGraphics(10, 10);
+  measure.textAlign(LEFT, BASELINE);
   for (let l of letters) {
-    textFont(l.fontName); textSize(l.size);
-    let w = textWidth(l.char);
-    widths.push(w); totalW += w;
+    measure.textFont(l.fontName);
+    measure.textSize(l.size);
+    let w = measure.textWidth(l.char);
+    widths.push(w);
+    totalW += w;
   }
-  totalW += gap*(letters.length-1);
-  let x = width/2-totalW/2;
-  let baseY = height/2;
+  measure.remove();
+  totalW += gap * (letters.length - 1);
+
+  let startX = width  / 2 - totalW / 2;
+  let baseY  = height / 2;
+
+  // ── Sample each letter ─────────────────────────────────────────────
+  let step = 4; // ~3 000 particles total across all letters
+  let curX = startX;
 
   for (let i = 0; i < letters.length; i++) {
-    let l = letters[i];
-    textFont(l.fontName); textSize(l.size);
-    let c = color(l.color); c.setAlpha(introAlpha);
-    fill(c); noStroke();
-    text(l.char, x, baseY+l.size*0.3);
-    x += widths[i]+gap;
+    let l    = letters[i];
+    let bufW = ceil(widths[i]) + 12;
+    let bufH = ceil(l.size)    + 12;
+
+    // Render white letter on black buffer, pixelDensity 1 so indices are 1:1
+    let pg = createGraphics(bufW, bufH);
+    pg.pixelDensity(1);
+    pg.background(0);
+    pg.noStroke();
+    pg.fill(255);
+    pg.textAlign(LEFT, BASELINE);
+    pg.textFont(l.fontName);
+    pg.textSize(l.size);
+    pg.text(l.char, 2, l.size); // baseline at y = l.size inside buffer
+
+    pg.loadPixels();
+
+    // Buffer baseline (l.size) maps to screen baseline (baseY + l.size*0.3)
+    let screenBaseX = curX - 2;
+    let screenBaseY = baseY + l.size * 0.3 - l.size;
+
+    for (let py = 0; py < bufH; py += step) {
+      for (let px = 0; px < bufW; px += step) {
+        let brightness = pg.pixels[(py * bufW + px) * 4]; // R channel
+        if (brightness > 110) {
+          let tx = screenBaseX + px;
+          let ty = screenBaseY  + py;
+
+          // Scatter direction: radially away from canvas centre + small wobble
+          let ang   = atan2(ty - height / 2, tx - width / 2) + random(-0.4, 0.4);
+          let speed = random(14, 32);
+
+          particles.push({
+            x:  random(-50, width  + 50), // start anywhere off or on screen
+            y:  random(-50, height + 50),
+            targetX: tx,
+            targetY: ty,
+            vx: random(-4, 4),
+            vy: random(-4, 4),
+            svx: cos(ang) * speed,  // pre-baked scatter impulse
+            svy: sin(ang) * speed,
+            col: l.color,           // hex string — fill() accepts these
+            sz:  random(2, 4),
+          });
+        }
+      }
+    }
+
+    curX += widths[i] + gap;
+    pg.remove();
   }
-  textFont('Playfair Display');
-  textSize(22); fill(80,80,80,introAlpha);
-  textAlign(CENTER,CENTER);
-  text(tagline, width/2, baseY+130);
-  textAlign(LEFT,BASELINE);
+
+  particlesReady = true;
+}
+
+// ============================================================
+// PARTICLE INTRO — draw (called every frame from draw())
+// ============================================================
+function drawParticleIntro() {
+  if (!particlesReady) return;
+
+  // ── Scroll → scatter / reassemble ───────────────────────────────────
+  if (scrollY > 8 && introPhase !== 'scattering') {
+    introPhase = 'scattering';
+  }
+  if (scrollY === 0 && introPhase === 'scattering') {
+    // User scrolled back to top — reset and reassemble
+    for (let p of particles) {
+      p.x  = random(-50, width  + 50);
+      p.y  = random(-50, height + 50);
+      p.vx = random(-4, 4);
+      p.vy = random(-4, 4);
+    }
+    introPhase    = 'assembling';
+    taglineAlpha  = 0;
+    settledFrames = 0;
+  }
+
+  // Hide entirely once scrolled well past the intro
+  if (scrollY > windowHeight * 0.45 && introPhase !== 'scattering') return;
+
+  // ── Update + draw particles ──────────────────────────────────────────
+  noStroke();
+  let settled     = 0;
+  let currentCol  = '';
+
+  for (let p of particles) {
+    // ── Physics ──────────────────────────────────────────────────────
+    if (introPhase === 'assembling' || introPhase === 'settled') {
+      // Spring toward target
+      p.vx += (p.targetX - p.x) * 0.055;
+      p.vy += (p.targetY - p.y) * 0.055;
+      p.vx *= 0.80;
+      p.vy *= 0.80;
+      p.x  += p.vx;
+      p.y  += p.vy;
+
+      let dx = p.targetX - p.x;
+      let dy = p.targetY - p.y;
+      if (abs(dx) < 1.5 && abs(dy) < 1.5) settled++;
+
+    } else {
+      // Scatter: apply pre-baked impulse every frame (builds up quickly)
+      p.vx += p.svx * 0.28;
+      p.vy += p.svy * 0.28;
+      p.x  += p.vx;
+      p.y  += p.vy;
+    }
+
+    // ── Draw (skip if off-screen) ─────────────────────────────────────
+    if (p.x < -60 || p.x > width + 60 || p.y < -60 || p.y > height + 60) continue;
+
+    // Batch fill calls — particles are stored in letter order so
+    // color only changes 6 times per frame
+    if (p.col !== currentCol) {
+      fill(p.col);
+      currentCol = p.col;
+    }
+    circle(p.x, p.y, p.sz);
+  }
+
+  // ── Phase transitions ────────────────────────────────────────────────
+  if (introPhase === 'assembling') {
+    if (settled / particles.length > 0.92) {
+      settledFrames++;
+      if (settledFrames > 40) introPhase = 'settled';
+    } else {
+      settledFrames = 0;
+    }
+  }
+
+  // ── Tagline ──────────────────────────────────────────────────────────
+  if (introPhase === 'settled') {
+    taglineAlpha = min(taglineAlpha + 5, 255);
+  } else if (introPhase === 'scattering') {
+    taglineAlpha = max(taglineAlpha - 12, 0);
+  }
+
+  if (taglineAlpha > 0) {
+    textFont('Playfair Display');
+    textSize(22);
+    textAlign(CENTER, CENTER);
+    fill(80, 80, 80, taglineAlpha);
+    text(tagline, width / 2, height / 2 + 130);
+    textAlign(LEFT, BASELINE);
+  }
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  // Rebuild particles for new canvas dimensions
+  document.fonts.ready.then(setupParticles);
 }
