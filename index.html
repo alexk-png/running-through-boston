@@ -1,35 +1,406 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Running Through Boston</title>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Running Through Boston</title>
 
-    <!-- Google Fonts used in sketch.js -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=EB+Garamond&family=Lora&family=Playfair+Display&family=Poppins&display=swap" rel="stylesheet" />
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=EB+Garamond&family=Lora&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet" />
 
-    <!-- P5.js library -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
+  <!-- Mapbox GL JS -->
+  <link  href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
 
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      body {
-        overflow-x: hidden;
-        background: #000;
-      }
-      canvas {
-        display: block;
-      }
-    </style>
-  </head>
-  <body>
-    <!-- Your sketch -->
-    <script src="sketch.js"></script>
-  </body>
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
+
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d1e36;
+      overflow-x: hidden;
+    }
+
+    canvas { display: block; }
+
+    /* ── Screen 2 : Route Selector ──────────────────────────────────── */
+    #screen2 {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: #0d1e36;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 48px;
+      padding: 40px 24px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.7s ease;
+    }
+    #screen2.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .s2-question {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(20px, 3.5vw, 38px);
+      color: #fff;
+      text-align: center;
+      margin-bottom: 18px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .route-btn, .dist-btn {
+      font-family: 'Poppins', sans-serif;
+      font-weight: 600;
+      font-size: 14px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 12px 30px;
+      border: 2px solid rgba(255,255,255,0.35);
+      background: transparent;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.18s, color 0.18s, border-color 0.18s;
+    }
+    .route-btn:hover, .dist-btn:hover {
+      background: rgba(255,255,255,0.08);
+    }
+    .route-btn.selected, .dist-btn.selected {
+      background: #6b96c8;
+      border-color: #6b96c8;
+      color: #fff;
+    }
+
+    #distance-section {
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s ease;
+    }
+    #distance-section.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    /* ── Unit toggle ────────────────────────────────────────────────── */
+    #unit-toggle {
+      display: flex;
+      border: 2px solid rgba(255,255,255,0.35);
+      overflow: hidden;
+      align-self: flex-end;
+      position: absolute;
+      top: 32px;
+      right: 32px;
+    }
+    .unit-btn {
+      font-family: 'Poppins', sans-serif;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 8px 18px;
+      border: none;
+      background: transparent;
+      color: rgba(255,255,255,0.5);
+      cursor: pointer;
+      transition: background 0.18s, color 0.18s;
+    }
+    .unit-btn.active {
+      background: #6b96c8;
+      color: #fff;
+    }
+    .unit-btn:not(.active):hover {
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+    }
+
+    #lets-go-btn {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(30px, 5vw, 54px);
+      letter-spacing: 0.1em;
+      padding: 14px 64px;
+      background: #b31319;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s ease, transform 0.15s ease;
+    }
+    #lets-go-btn:hover { transform: scale(1.05); }
+    #lets-go-btn.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    /* ── Screen 3 : Mapbox Map ──────────────────────────────────────── */
+    #screen3 {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.8s ease;
+    }
+    #screen3.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Route label overlaid on map — top centered */
+    #route-label {
+      position: absolute;
+      top: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(22px, 3.2vw, 42px);
+      color: #fff;
+      text-shadow: 0 2px 14px rgba(0,0,0,0.7);
+      text-align: center;
+      white-space: nowrap;
+      z-index: 21;
+      opacity: 0;
+      transition: opacity 0.8s ease 0.4s;
+      pointer-events: none;
+    }
+    #route-label.visible { opacity: 1; }
+
+    /* ── Screen 4 : Photo Collage ───────────────────────────────────── */
+    #screen4 {
+      position: fixed;
+      inset: 0;
+      z-index: 22;
+      pointer-events: none;  /* screen itself is pass-through */
+      /* no bg — map stays visible beneath photos */
+    }
+    #screen4 .photo-card {
+      pointer-events: all;   /* but cards are individually clickable */
+    }
+
+    .photo-card {
+      position: absolute;
+      background: #6b96c8;
+      padding: 8px;
+      box-shadow: 0 6px 28px rgba(0,0,0,0.45);
+      transform: rotate(var(--rot)) scale(0.88);
+      opacity: 0;
+      cursor: pointer;
+      transition: opacity 0.55s ease, transform 0.55s ease;
+    }
+    .photo-card.show {
+      opacity: 1;
+      transform: rotate(var(--rot)) scale(1);
+    }
+    .photo-card:hover {
+      transform: rotate(var(--rot)) scale(1.05);
+      box-shadow: 0 10px 36px rgba(0,0,0,0.55);
+      z-index: 30;
+    }
+    .photo-card {
+      overflow: hidden;
+    }
+    .photo-card img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center bottom;
+    }
+
+    /* ── Lightbox ───────────────────────────────────────────────────── */
+    #lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    #lightbox.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+    #lightbox-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(13, 30, 54, 0.88);
+      cursor: pointer;
+    }
+    #lightbox-card {
+      position: relative;
+      z-index: 101;
+      background: #6b96c8;
+      padding: 10px;
+      box-shadow: 0 16px 60px rgba(0,0,0,0.6);
+      max-width: 520px;
+      width: 88vw;
+      max-height: 88vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      transform: scale(0.92);
+      transition: transform 0.3s ease;
+    }
+    #lightbox.open #lightbox-card {
+      transform: scale(1);
+    }
+    #lightbox-card img {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 55vh;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+    #lightbox-desc {
+      margin-top: 14px;
+      margin-bottom: 6px;
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      font-size: clamp(13px, 1.4vw, 16px);
+      color: #0d1e36;
+      line-height: 1.6;
+      text-align: center;
+      padding: 0 6px 8px;
+      flex-shrink: 0;
+    }
+    #lightbox-close {
+      position: absolute;
+      top: -14px;
+      right: -14px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #0d1e36;
+      color: #fff;
+      border: none;
+      font-size: 18px;
+      line-height: 32px;
+      text-align: center;
+      cursor: pointer;
+      z-index: 102;
+      transition: background 0.2s;
+    }
+    #lightbox-close:hover { background: #b31319; }
+
+    /* ── Back navigation buttons ────────────────────────────────────── */
+
+    /* "← Change route" — appears above the How Far? question */
+    #change-route-btn {
+      display: block;
+      font-family: 'Poppins', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.45);
+      background: none;
+      border: none;
+      cursor: pointer;
+      margin-bottom: 6px;
+      padding: 0;
+      transition: color 0.2s;
+    }
+    #change-route-btn:hover { color: #fff; }
+
+    /* "← Back" on the map screen — top-right corner */
+    #map-back-btn {
+      position: absolute;
+      top: 24px;
+      right: 28px;
+      z-index: 25;
+      font-family: 'Poppins', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #fff;
+      background: rgba(13,30,54,0.9);
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+      transition: background 0.2s, color 0.2s;
+    }
+    #map-back-btn:hover {
+      background: rgba(13,30,54,1);
+      color: #6b96c8;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Screen 2 : Route Selector ─────────────────────────────────── -->
+  <div id="screen2">
+    <div id="unit-toggle">
+      <button class="unit-btn active" data-unit="mi">Miles</button>
+      <button class="unit-btn"        data-unit="km">KM</button>
+    </div>
+
+    <div>
+      <p class="s2-question">Where do you want to run?</p>
+      <div class="btn-row" id="route-btns">
+        <button class="route-btn" data-route="fens">The Fens</button>
+        <button class="route-btn" data-route="charles">The Charles</button>
+        <button class="route-btn" data-route="commave">Comm Ave</button>
+      </div>
+    </div>
+
+    <div id="distance-section">
+      <button id="change-route-btn">← Change route</button>
+      <p class="s2-question">How far?</p>
+      <div class="btn-row" id="dist-btns"></div>
+    </div>
+
+    <button id="lets-go-btn">Let's Go</button>
+
+  </div>
+
+  <!-- ── Screen 3 : Mapbox Map ──────────────────────────────────────── -->
+  <div id="screen3">
+    <div id="map"></div>
+    <div id="route-label"></div>
+    <button id="map-back-btn">← Back</button>
+  </div>
+
+  <!-- ── Screen 4 : Photo Collage (overlays map) ───────────────────── -->
+  <div id="screen4"></div>
+
+  <!-- Lightbox -->
+  <div id="lightbox">
+    <div id="lightbox-backdrop"></div>
+    <div id="lightbox-card">
+      <button id="lightbox-close">×</button>
+      <img id="lightbox-img" src="" alt="" />
+      <p id="lightbox-desc"></p>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="sketch.js?v=12"></script>
+  <script src="app.js?v=13"></script>
+
+</body>
 </html>
